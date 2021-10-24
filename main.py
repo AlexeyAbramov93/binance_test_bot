@@ -327,7 +327,6 @@ init_bot(bars)
 # Запускаем проход по свечкам
 for i in range(1,len(candles)-PERIOD):  
     bars=candles[:][i:i+PERIOD+1]
-    candles=get_candles_list()
     run_bot(bars)
 
 ####################################################################################################################################
