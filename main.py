@@ -1,55 +1,35 @@
-from tortoise import Tortoise, fields, run_async
-from tortoise.models import Model
+from models import Coin_type, Coin
+from tortoise import Tortoise, run_async
+
+import random
 
 
-class Coin(Model):
-    id = fields.IntField(pk=True)
-    name = fields.CharField(max_length=255, description='Name of the cryptocurrency')
-    price=fields.FloatField()
-    datetime = fields.DatetimeField(auto_now_add=True, description='Created datetime')
-    
-    coin_type = fields.ForeignKeyField('models.Coin_type', related_name='coins', null=True)
-
-    class Meta:
-        table = 'coin'
-        table_description = 'This table contains a list of all the cryptocurrencies'
-
-    def __str__(self):
-        return self.name
-
-
-class Coin_type(Model):
-    id = fields.IntField(pk=True)
-    name = fields.CharField(max_length=255, description='type name of the coin')
- 
-    class Meta:
-        table = 'coin_type'
-        table_description = 'This table contains a type list of the coins'
-
-    def __str__(self):
-        return self.name
-
-
-async def run():
+async def init():
     await Tortoise.init(db_url='sqlite://sql_app.db', modules={'models': ['__main__']})
-    await Tortoise.generate_schemas()
+    await Tortoise.generate_schemas(safe=True)
 
-    bitcoin=Coin_type(name='Bitcoin')
-    altcoin=Coin_type(name='Altcoin')
-    token=Coin_type(name='Token')
-    stablecoin=Coin_type(name='Stablecoin')
-
-    await bitcoin.save()
-    await altcoin.save()
-    await token.save()
-    await stablecoin.save()
-
-    await Coin(name='Test name #1', price=0.01, coin_type=bitcoin).save()
-    await Coin(name='Test name #2', price=0.02, coin_type=altcoin).save()
-    await Coin(name='Test name #3', price=0.03, coin_type=token).save()
-    await Coin(name='Test name #4', price=0.04, coin_type=stablecoin).save()
-    await Coin(name='Test name #5', price=0.05, coin_type=stablecoin).save()
-    await Coin(name='Test name #6', price=0.06).save()
+    bitcoin=await Coin_type.create(name='Bitcoin')
+    altcoin=await Coin_type.create(name='Altcoin')
+    token=await Coin_type.create(name='Token')
+    stablecoin=await Coin_type.create(name='Stablecoin')
+    
+    for i in range(1,15):
+        name='Test {}'.format(i)
+        await Coin.create(name=name, price=random.random(), coin_type=await Coin_type.get(id=random.randint(1,4)))
 
 if __name__ == '__main__':
-    run_async(run())
+    run_async(init()) # run_async по выполнению всех операций init() завершает автоматически соединение с БД
+
+# Для нового обращения к базе данных надо заново создавать новое подключение
+# На данный момент получилось только так:
+# await Tortoise.init(db_url='sqlite://sql_app.db', modules={'models': ['__main__']})
+
+async def edit():
+    await Tortoise.init(db_url='sqlite://sql_app.db', modules={'models': ['__main__']})
+
+
+    await Coin_type.create(name='Stablecoin_NEW')
+    await Coin_type.filter(id=1).update(name="Bitcoin_NEW")
+
+
+run_async(edit())
