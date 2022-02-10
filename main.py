@@ -1,10 +1,36 @@
+
+
 import config
 from binance.client import Client
 
 from datetime import datetime
 import pandas as pd
-import schedule
 import time
+
+
+####################################################################################################################################
+from models import Candle
+from tortoise import Tortoise, run_async
+
+import random
+
+async def init():
+    await Tortoise.init(db_url='sqlite://sql_app.db', modules={'models': ['__main__']})
+    await Tortoise.generate_schemas(safe=True)
+
+if __name__ == '__main__':
+    run_async(init()) # run_async по выполнению всех операций init() завершает автоматически соединение с БД
+
+# Для нового обращения к базе данных надо заново создавать новое подключение
+# На данный момент получилось только так:
+# await Tortoise.init(db_url='sqlite://sql_app.db', modules={'models': ['__main__']})
+
+async def add_to_DB(timestamp, balance, signal, position_buy, position_sell):
+    await Tortoise.init(db_url='sqlite://sql_app.db', modules={'models': ['__main__']})
+    await Candle.create(timestamp=timestamp, balance=balance, signal=signal, position_buy=position_buy, position_sell=position_sell)
+
+####################################################################################################################################
+
 
 
 pd.set_option('display.max.rows', None)
@@ -15,6 +41,7 @@ client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
 
 
 balance=10000.0
+total_balance=balance #Данное значение обновляется во время закрытия сделки и заносится в БД
 position_buy=0.0
 position_sell=0.0
 comission=0.0005 # 1=100%, 0.001=0.1%
@@ -102,7 +129,7 @@ def close_current_order(df):
     
     # return clear_order
     global is_in_long_position
-    global position_buy, position_sell, balance
+    global position_buy, position_sell, balance, total_balance
 
     last_row_index = len(df.index) - 1
     prev_row_index = last_row_index - 1
@@ -124,6 +151,8 @@ def close_current_order(df):
         print('-----------------------------------------------------------------------------------------------')
         print(f'balance: {balance}')
     print('-----------------------------------------------------------------------------------------------')
+    
+    total_balance=balance
 
 
 def check_buy_sell_signals(df):
@@ -287,6 +316,7 @@ def run_bot(bars):
     global position_buy, position_sell
     global prev_in_uptrend
 
+
     try:
         #print(f'fetching new bars for {datetime.now().isoformat()}')
         #bars = exchange.fetch_ohlcv(PAIR, timeframe=TIMEFRAME, limit=TREND_LIMIT)
@@ -301,15 +331,14 @@ def run_bot(bars):
 
         print('{0} long/short_signal: {1}'.format(df['timestamp'][last_row_index],df['in_uptrend'][last_row_index]))
         print(f'position_buy: {position_buy}, position_sell: {position_sell}')
-
-        print()
+        run_async(add_to_DB(str(df['timestamp'][last_row_index]), total_balance, str(df['in_uptrend'][last_row_index]), float(position_buy), float(position_sell)))
+        
         check_buy_sell_signals(supertrend_data)
 
         prev_in_uptrend=df['in_uptrend'][last_row_index]
 
     except Exception as e:
         print(e)
-
 
 ####################################################################################################################################
 # Здесь хранится значение тренда предыдущего запуска supertrend()
@@ -330,3 +359,5 @@ for i in range(1,len(candles)-PERIOD):
     run_bot(bars)
 
 ####################################################################################################################################
+
+

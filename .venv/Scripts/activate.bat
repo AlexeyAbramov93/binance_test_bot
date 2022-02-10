@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=E:\Projects_python\CryptoBot_v1\.venv
+set VIRTUAL_ENV=E:\python_projects\TortoiseORM_learn\.venv
 
 if not defined PROMPT set PROMPT=$P$G
 
