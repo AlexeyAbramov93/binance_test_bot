@@ -1,5 +1,6 @@
-from tortoise import Tortoise, fields, run_async
+from tortoise import fields
 from tortoise.models import Model
+from tortoise.contrib.pydantic import pydantic_model_creator
 
 
 
@@ -19,3 +20,5 @@ class Candle(Model):
     def __str__(self):
         return self.name
 
+Candle_Pydantic = pydantic_model_creator(Candle, name="Candle")
+CandleIn_Pydantic = pydantic_model_creator(Candle, name="CandleIn", exclude_readonly=True)

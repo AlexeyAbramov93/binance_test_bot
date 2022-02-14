@@ -1,5 +1,3 @@
-
-
 import config
 from binance.client import Client
 
@@ -7,12 +5,10 @@ from datetime import datetime
 import pandas as pd
 import time
 
-
 ####################################################################################################################################
-from models import Candle
+from models import Candle, Candle_Pydantic, CandleIn_Pydantic
 from tortoise import Tortoise, run_async
 
-import random
 
 async def init():
     await Tortoise.init(db_url='sqlite://sql_app.db', modules={'models': ['__main__']})
@@ -31,14 +27,10 @@ async def add_to_DB(timestamp, balance, signal, position_buy, position_sell):
 
 ####################################################################################################################################
 
-
-
 pd.set_option('display.max.rows', None)
-
 
 #Initialise the client
 client = Client(config.BINANCE_API_KEY, config.BINANCE_SECRET_KEY)
-
 
 balance=10000.0
 total_balance=balance #Данное значение обновляется во время закрытия сделки и заносится в БД
@@ -46,16 +38,16 @@ position_buy=0.0
 position_sell=0.0
 comission=0.0005 # 1=100%, 0.001=0.1%
 
-
 FRST_COIN = 'DOGE'
 SCND_COIN = 'USDT'
 PAIR = f'{FRST_COIN}/{SCND_COIN}'
 PAIR_BNC = f'{FRST_COIN}{SCND_COIN}'
 AMOUNT = 20000 # Количество в DOGE с учетом плеча. Т.е. если у нас 100$, плечо 10, курс 0.25, то 100 * 10 / 0.25 = 4000
 
-TIMEFRAME = '3m'
+#TIMEFRAME = '3m'
 TREND_LIMIT = 100
 PERIOD = 3
+
 
 def tr(df):
     
@@ -65,6 +57,7 @@ def tr(df):
     df['low-pc'] = abs(df['low'] - df['previous_close'])
     tr = df[['high-low', 'high-pc', 'low-pc']].max(axis=1)
     return tr
+
 
 def atr(df, period=14):
     df['tr'] = tr(df)
@@ -201,7 +194,6 @@ def check_buy_sell_signals(df):
             print('already in long position, nothing to do')
             print()
        
-
     if df['in_uptrend'][prev_row_index] and not df['in_uptrend'][last_row_index]:
         # print("sell")
         # # if in_position:
@@ -224,7 +216,7 @@ def check_buy_sell_signals(df):
         # else:
         #     print('already in short position, nothing to do')
  
-        print('{0} long/short_signal: {1}'.format(df['timestamp'][last_row_index],df['in_uptrend'][last_row_index]))
+        #print('{0} long/short_signal: {1}'.format(df['timestamp'][last_row_index],df['in_uptrend'][last_row_index]))
         print("Функция check_buy_sell_signals() - Сигнал на ПРОДАЖУ")
 
         if is_in_long_position:
@@ -242,10 +234,17 @@ def check_buy_sell_signals(df):
 
 # функция запрашивает частями историю свечек и далее объединяет нужные данные в один список
 # возвращает истрию свечек, где limit=количество запрашиваемых свечек, N-количество запросов
-def get_candles_list(limit=500, N=2):
+def get_candles_list(limit=50, N=2):
     candles_full_list=[]
+    current_time_5MINUTE=client.get_klines(symbol='DOGEBUSD', interval=Client.KLINE_INTERVAL_5MINUTE, limit=1)
+    lenght_5MINUTE=300000
     for i in range(1,N+1):
-        temp=client.get_klines(symbol='DOGEBUSD', interval=Client.KLINE_INTERVAL_5MINUTE,startTime=(1632782100000-2592000000*7)+3*limit*100000*i,limit=limit)
+        temp=client.get_klines( 
+            symbol='DOGEBUSD', 
+            interval=Client.KLINE_INTERVAL_5MINUTE,
+            endTime=current_time_5MINUTE[0][0]-limit*lenght_5MINUTE*(N-i), 
+            limit=limit
+            )
         for i in range(len(temp)):
             candles_full_list.append(temp[i])
     # Выбираю только 6 нужных мне столбцов с которыми буду работать
@@ -307,7 +306,6 @@ def init_bot(bars):
 
         prev_in_uptrend=df['in_uptrend'][last_row_index]
 
-
     # except Exception as e:
     #     print(e)   
 
@@ -315,7 +313,6 @@ def init_bot(bars):
 def run_bot(bars):
     global position_buy, position_sell
     global prev_in_uptrend
-
 
     try:
         #print(f'fetching new bars for {datetime.now().isoformat()}')
@@ -331,7 +328,12 @@ def run_bot(bars):
 
         print('{0} long/short_signal: {1}'.format(df['timestamp'][last_row_index],df['in_uptrend'][last_row_index]))
         print(f'position_buy: {position_buy}, position_sell: {position_sell}')
-        run_async(add_to_DB(str(df['timestamp'][last_row_index]), total_balance, str(df['in_uptrend'][last_row_index]), float(position_buy), float(position_sell)))
+        run_async(add_to_DB(
+                        str(df['timestamp'][last_row_index]), 
+                        total_balance, str(df['in_uptrend'][last_row_index]), 
+                        float(position_buy), 
+                        float(position_sell))
+                        )
         
         check_buy_sell_signals(supertrend_data)
 
@@ -341,16 +343,15 @@ def run_bot(bars):
         print(e)
 
 ####################################################################################################################################
-# Здесь хранится значение тренда предыдущего запуска supertrend()
-prev_in_uptrend=True
-# Выгружаем полный список свечек из Binance
-candles=[]
-candles=get_candles_list() # запрашиваем свечки для выполнения функции init_bot()
 
+prev_in_uptrend=True # Здесь хранится значение тренда предыдущего запуска supertrend()
+candles=[] # Полный список свечек из Binance
+candles=get_candles_list() # запрашиваем свечки для выполнения функции init_bot()
 # Выбираем из полного списка candles, (PERIOD+1) строчек
 # Например, если PERIOD=3, выбираем 3 свечки "истории" и четвертая свечка - текущая
 bars=[]
 bars=candles[:][0:PERIOD+1]
+
 init_bot(bars)
 
 # Запускаем проход по свечкам
@@ -360,4 +361,34 @@ for i in range(1,len(candles)-PERIOD):
 
 ####################################################################################################################################
 
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from tortoise.contrib.fastapi import HTTPNotFoundError, register_tortoise
+from typing import List
 
+app = FastAPI(title="Tortoise ORM FastAPI example")
+
+
+class Status(BaseModel):
+    message: str
+
+
+@app.get("/candles", response_model=List[Candle_Pydantic])
+async def get_candles():
+    return await Candle_Pydantic.from_queryset(Candle.all())
+
+
+register_tortoise(
+    app,
+    db_url='sqlite://sql_app.db',
+    modules={"models": ["models"]},
+    #generate_schemas=True,
+    add_exception_handlers=True,
+)
+
+
+if __name__ == '__main__':
+    uvicorn.run('main:app', port=8000, host='127.0.0.1', reload=True)
+
+####################################################################################################################################
